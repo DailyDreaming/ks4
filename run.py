@@ -7,7 +7,7 @@ import json
 import comet_ml
 import sys
 import os
-import zipfile
+import datetime
 import torch
 import spikeinterface as si
 import spikeinterface.extractors as se
@@ -22,7 +22,9 @@ with open(os.path.join(this_dir, "config.json"), 'r') as f:
 
 data_dir = os.path.join(this_dir, 'data')
 os.makedirs(data_dir, exist_ok=True)
-results_dir = os.path.join(data_dir, 'ks4_results')
+timestamp = str(datetime.datetime.now()).replace(' ', '-').replace(':', '-').replace('.', '-')
+prep_dir = os.path.join(data_dir, f"{timestamp}-preprocessed")
+results_dir = os.path.join(data_dir, f"{timestamp}-results")
 
 try:
     comet_ml.init(api_key=os.environ['COMET_API_KEY'], project_name=os.environ['COMET_PROJECT_NAME'])
@@ -57,7 +59,7 @@ def kilorun(
     multirecording = si.concatenate_recordings([recording_cmr])
     print("Setting probe")
     recording = multirecording.set_probe(recording_cmr.get_probe())
-    recording_saved = recording.save(folder="./data/preprocessed/")
+    recording_saved = recording.save(folder=prep_dir)
 
     torch.cuda.empty_cache()
 
@@ -67,7 +69,7 @@ def kilorun(
         recording_saved,
         output_folder=results_dir,
         verbose=True,
-        **params,
+        **params
     )
 
     try:
@@ -75,11 +77,6 @@ def kilorun(
         good_count = (df.iloc[:, 1] == "good").sum()
     except:
         good_count = 0
-
-    with zipfile.ZipFile(os.path.join(results_dir, "stitch_phy.zip"), "w") as zip_file:
-        for filename in os.listdir(results_dir):
-            zip_file.write(filename)  # Add the file to the ZIP archive
-    zip_file.close()
 
     return good_count
 
@@ -112,10 +109,8 @@ def number_of_good_units(
     ccg_threshold,
     cluster_downsampling,
     cluster_pcs,
-    duplicate_spike_bins,
     do_correction,
     keep_good_only,
-    save_extra_kwargs,
     skip_kilosort_preprocessing,
     scaleproc,
 ):
@@ -147,10 +142,8 @@ def number_of_good_units(
         "ccg_threshold": ccg_threshold,
         "cluster_downsampling": cluster_downsampling,
         "cluster_pcs": cluster_pcs,
-        "duplicate_spike_bins": duplicate_spike_bins,
         "do_correction": do_correction,
         "keep_good_only": keep_good_only,
-        "save_extra_kwargs": save_extra_kwargs,
         "skip_kilosort_preprocessing": skip_kilosort_preprocessing,
         "scaleproc": scaleproc,
     }
@@ -189,10 +182,8 @@ def main():
             ccg_threshold=exp.get_parameter("ccg_threshold"),
             cluster_downsampling=exp.get_parameter("cluster_downsampling"),
             cluster_pcs=exp.get_parameter("cluster_pcs"),
-            duplicate_spike_bins=exp.get_parameter("duplicate_spike_bins"),
             do_correction=eval(exp.get_parameter("do_correction")),
             keep_good_only=eval(exp.get_parameter("keep_good_only")),
-            save_extra_kwargs=eval(exp.get_parameter("save_extra_kwargs")),
             skip_kilosort_preprocessing=eval(
                 exp.get_parameter("skip_kilosort_preprocessing")
             ),
