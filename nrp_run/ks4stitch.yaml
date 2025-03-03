@@ -1,0 +1,113 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${NAME}
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never  # Never | OnFailure
+
+      containers:
+      - name: stitch-sorting-ks4
+        image: kamranhussain05/ds-stitch-ks4:${TAG}
+        imagePullPolicy: Always
+
+        resources:
+          # GPU Run
+          requests:
+            cpu: "20"
+            memory: "200Gi"
+            ephemeral-storage: "200Gi"
+          limits:
+            cpu: "128"
+            memory: "1000Gi"
+            nvidia.com/gpu: 1
+            ephemeral-storage: "2000Gi"
+
+
+#          # CPU Run
+#          requests:
+#            cpu: "6"
+#            memory: "22Gi"
+#          limits:
+#            cpu: "11"
+#            memory: "40Gi"
+
+        # command: ["stdbuf", "-i0", "-o0", "-e0", "/usr/bin/time", "-v", "bash", "-c"]
+        command: ["stdbuf", "-i0", "-o0", "-e0", "bash", "-c"]
+        args:
+          - |
+            echo "Hello from the analysis job using KILOSORT 4";
+            nvidia-smi;
+            python -u dataset_stitch.py "${DATASET_PATHS}" "${UPLOAD_PATHS}";
+        env:
+          - name: "AWS_PROFILE"
+            value: "default"
+          - name: "PYTHONUNBUFFERED"
+            value: "1"
+          - name: "DATASET_PATHS"
+            value: "${DATASET_PATHS}"
+          - name: "UPLOAD_PATHS"
+            value: "${UPLOAD_PATHS}"
+
+  
+        volumeMounts:
+
+          # Ceph & SWFS credentials
+          - name: "prp-s3-credentials"
+            mountPath: "/home/jovyan/.aws/credentials"
+            subPath: "credentials"
+          - name: "prp-s3-credentials"
+            mountPath: "/home/jovyan/.s3cfg"
+            subPath: ".s3cfg"
+          - name: "prp-s3-credentials"
+            mountPath: "/home/jovyan/.ssh/git-id-rsa"
+            subPath: "git-id-rsa"
+          - name: "git-credentials"
+            mountPath: "/home/jovyan/.ssh/config111"
+            subPath: "config"
+
+
+          # kube config
+          - name: "kube-config"
+            mountPath: "/root/.kube"
+          # SystemV shared memory
+          - name: "dshm"
+            mountPath: "/dev/shm"
+
+      tolerations:
+        - key: "nautilus.io/chase-ci"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              # Host blacklist
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                  - rci-nrp-gpu-07.sdsu.edu  # unknown a100 issue
+
+      volumes:
+        # Secrets file for nautilus s3 credentials .aws/credentials and .s3cfg
+        - name: prp-s3-credentials
+          secret:
+            secretName: prp-s3-credentials
+            defaultMode: 256 #384 #0600 #384 #256 # git file needs to be readable only by root
+        - name: kube-config
+          secret:
+            secretName: kube-config
+        
+        - name: git-credentials
+          secret:
+            secretName: git-credentials
+
+        # Shared memory (necessary for Python's multiprocessing.shared_memory module to work)
+        - name: dshm
+          emptyDir:
+            medium: Memory
